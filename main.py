@@ -19,6 +19,7 @@ from telegram.ext import (
     MessageHandler,
     Updater,
 )
+from telegram.utils.helpers import escape_markdown
 
 CAPTCHA_REPLY_TIMEOUT = 120  # minutes
 DB_FILE=os.environ.get("DB_FILE", './chatbot.db')
@@ -194,8 +195,8 @@ def checkCorrectlyCaptcha(update, context):
                 context.bot.send_message(
                     chat_id=update.effective_chat.id,
                     parse_mode='MarkdownV2',
-                    text="Добро пожаловать в чат, %s, пожалуйста, при входе напишите кратко (а лучше нет) вашу историю с хештегом *без скобочек*: (#)intro, и хештегами локации и специалиазации например: (#)intro всем привет я Василий, родом из бабруйска, продался в галеру и догреб до города мечты. (#)Madrid, (#)DevOps, (#)python и немного (#)C++ для души."
-                    % username,
+                    text=escape_markdown("Добро пожаловать в чат, %s, пожалуйста, при входе напишите кратко (а лучше нет) вашу историю с хештегом *без скобочек*: (#)intro, и хештегами локации и специалиазации например: (#)intro всем привет я Василий, родом из бабруйска, продался в галеру и догреб до города мечты. (#)Madrid, (#)DevOps, (#)python и немного (#)C++ для души."
+                    % username, version=2),
                 )
             else:
                 if update.effective_user.username:
