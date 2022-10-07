@@ -195,8 +195,9 @@ def checkCorrectlyCaptcha(update, context):
                 context.bot.send_message(
                     chat_id=update.effective_chat.id,
                     parse_mode='MarkdownV2',
-                    text=escape_markdown("Добро пожаловать в чат, %s, пожалуйста, при входе напишите кратко (а лучше нет) вашу историю с хештегом *без скобочек*: (#)intro, и хештегами локации и специалиазации например: (#)intro всем привет я Василий, родом из бабруйска, продался в галеру и догреб до города мечты. (#)Madrid, (#)DevOps, (#)python и немного (#)C++ для души."
-                    % username, version=2),
+                    text=escape_markdown("Добро пожаловать в чат, %s, пожалуйста, при входе напишите кратко (а лучше нет) вашу историю с хештегом " % username, version=2) + 
+                                         "*без скобочек*" +
+                         escape_markdown(": (#)intro, и хештегами локации и специализации. Пример: (#)intro всем привет, я Василий, родом из бабруйска, продался в галеру и догреб до города мечты. (#)Madrid, (#)DevOps, (#)python и немного (#)C++ для души.", version=2),
                 )
             else:
                 if update.effective_user.username:
