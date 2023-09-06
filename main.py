@@ -5,7 +5,7 @@ import time
 from random import randint
 from contextlib import closing
 
-import sqlite3
+from db import get_connection
 
 from telegram import ChatPermissions, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import BadRequest
@@ -16,42 +16,20 @@ from telegram.ext import (
     MessageHandler,
     Updater,
 )
-from telegram.ext.filters import BaseFilter
+
 from telegram.helpers import escape_markdown
 
+import db
+from new_chat_member_filter import FilterNewChatMembers
+
 CAPTCHA_REPLY_TIMEOUT = 120  # minutes
-DB_FILE=os.environ.get("DB_FILE", './chatbot.db')
+DB_FILE = os.environ.get("DB_FILE", './chatbot.db')
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger()
 
 
-class FilterNewChatMembers(BaseFilter):
-    """ Фильтрация сообщений о входе """
-
-    def __init__(self):
-        # Пользователи проходящие проверку капчей
-        self.status_members = ["member", "restricted", "left", "kicked"]
-
-    def __call__(self, update):
-        user_id = update.effective_user.id
-        chat_id = update.effective_chat.id
-        message = update.effective_message
-
-        if message.new_chat_members:
-            # Проверка, если пользователю уже давалась капча
-            with closing(con.cursor()) as cur:
-                cur.execute("SELECT id FROM banlist WHERE chat_id=%s AND user_id=%s" % (chat_id, user_id))
-                if cur.fetchone():
-                    return False
-
-            member_status = message.bot.getChatMember(chat_id, user_id)["status"]
-            if member_status in self.status_members:
-                return True
-        return False
-
-
-def banUser():
+def ban_user():
     """
     Работает второстепенным потоком, банит
     пользователей не ответивших или ответивших
@@ -61,7 +39,7 @@ def banUser():
     while True:
         time.sleep(30)
         logger.info("30s cycle of ban thread")
-        with closing(con.cursor()) as cur:
+        with closing(db_connection.cursor()) as cur:
             cur.execute(
                 "SELECT id, user_id, chat_id, captcha_message_id FROM banlist WHERE time<%s" % int(time.time())
             )
@@ -73,7 +51,7 @@ def banUser():
                     "captcha_message_id": banrecord[3],
                 }
                 cur.execute("DELETE FROM banlist WHERE id=%s" % (ban["id_record"]))
-                con.commit()
+                db_connection.commit()
                 try:
                     dispatcher.bot.ban_chat_member(
                         chat_id=ban["chat_id"], user_id=ban["user_id"]
@@ -129,12 +107,12 @@ def captcha(update: Update, context: CallbackContext):
     #     "%s, выбери цифру %s" % (username, captcha_answers[captcha_answer]), reply_markup=keyboard
     # )
 
-    with closing(con.cursor()) as cur:
+    with closing(db_connection.cursor()) as cur:
         print("INSERT INTO banlist (user_id, time, chat_id, captcha_message_id, answer) VALUES (%s, %s, %s, %s, %s)" % (user.id, kick_date, chat.id, captcha_msg.message_id, captcha_answer))
         cur.execute(
             "INSERT INTO banlist (user_id, time, chat_id, captcha_message_id, answer) VALUES (%s, %s, %s, %s, %s)" % (user.id, kick_date, chat.id, captcha_msg.message_id, captcha_answer)
         )
-        con.commit()
+        db_connection.commit()
 
     context.bot.restrictChatMember(
         chat.id, user.id, permissions=ChatPermissions(can_send_messages=False)
@@ -154,7 +132,7 @@ def checkCorrectlyCaptcha(update, context):
     message_id = update.callback_query.message.message_id
     user_captcha_answer = update.callback_query.data
 
-    with closing(con.cursor()) as cur:
+    with closing(db_connection.cursor()) as cur:
         cur.execute(
             "SELECT answer FROM banlist WHERE user_id=%s AND captcha_message_id=%s AND chat_id=%s" % (user.id, message_id, chat.id)
         )
@@ -208,7 +186,7 @@ def checkCorrectlyCaptcha(update, context):
                 cur.execute(
                     "UPDATE banlist SET time=%s WHERE user_id=%s AND chat_id=%s" % (int(time.time()) + 3*24*60*60, user.id, chat.id)
                 )
-            con.commit()
+            db_connection.commit()
 
 
 def unban(update, context):
@@ -248,7 +226,7 @@ def unban(update, context):
         )
 
         # Убираем из бд оставшиеся записи бана
-        with closing(con.cursor()) as cur:
+        with closing(db_connection.cursor()) as cur:
             cur.execute(
                 "SELECT captcha_message_id FROM banlist WHERE user_id=%s AND chat_id=%s" % (user_id, chat.id)
             )
@@ -263,7 +241,7 @@ def unban(update, context):
             cur.execute(
                 "DELETE FROM banlist WHERE user_id=%s AND chat_id=%s" % (user_id, chat.id)
             )
-            con.commit()
+            db_connection.commit()
 
 
 def main():
@@ -275,9 +253,9 @@ def main():
 
     updater = Updater(token=os.getenv("TG_BOT_TOKEN", ""))
     dispatcher = updater.dispatcher
-    filter = FilterNewChatMembers()
+    users_filter = FilterNewChatMembers()
 
-    dispatcher.add_handler(MessageHandler(filter, captcha))
+    dispatcher.add_handler(MessageHandler(users_filter, captcha))
     dispatcher.add_handler(CallbackQueryHandler(checkCorrectlyCaptcha))
     dispatcher.add_handler(CommandHandler("unban", unban))
 
@@ -286,27 +264,8 @@ def main():
 
 
 if __name__ == "__main__":
-    # Connect to DB
-    if not os.path.isfile(DB_FILE):
-        con = sqlite3.connect(DB_FILE, check_same_thread=False)
-        cur = con.cursor()
-        cur.execute(
-            """
-            CREATE TABLE banlist
-            (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-            user_id INT NOT NULL,
-            time timestamp NOT NULL,
-            chat_id BIGINT NOT NULL,
-            captcha_message_id INT NOT NULL,
-            answer INT NOT NULL);
-        """
-        )
-
-        con.commit()
-
-        con.close()
-        
-    con = sqlite3.connect(DB_FILE, check_same_thread=False)
+    logger.info("Get db_connection")
+    db_connection = get_connection()
 
     # Словарь для конвертация цифр на слова
     captcha_answers = {
@@ -322,7 +281,7 @@ if __name__ == "__main__":
 
     logger.info("Starting ban thread")
     # Второстепенный поток бана пользователей
-    threading.Thread(target=banUser).start()
+    threading.Thread(target=ban_user).start()
 
     # Тело бота
     logger.info("Starting main bot process")
