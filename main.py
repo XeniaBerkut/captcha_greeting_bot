@@ -2,8 +2,6 @@ import logging
 import os
 import threading
 import time
-#from datetime import datetime, timedelta
-import time
 from random import randint
 from contextlib import closing
 
@@ -12,14 +10,14 @@ import sqlite3
 from telegram import ChatPermissions, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import BadRequest
 from telegram.ext import (
-    BaseFilter,
     CallbackContext,
     CallbackQueryHandler,
     CommandHandler,
     MessageHandler,
     Updater,
 )
-from telegram.utils.helpers import escape_markdown
+from telegram.ext.filters import BaseFilter
+from telegram.helpers import escape_markdown
 
 CAPTCHA_REPLY_TIMEOUT = 120  # minutes
 DB_FILE=os.environ.get("DB_FILE", './chatbot.db')
